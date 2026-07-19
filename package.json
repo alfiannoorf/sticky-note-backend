@@ -1,0 +1,13 @@
+{
+  "name": "sticky-note-backend-belajar",
+  "version": "1.0.0",
+  "description": "Backend sederhana untuk belajar konsep API sebelum masuk ke database dan cloud",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5"
+  }
+}
