@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sticky Note - Kirim Catatan</title>
+<style>
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #f3f4f6;
+    color: #1f2937;
+    padding: 16px;
+    min-height: 100vh;
+  }
+
+  .container {
+    max-width: 480px;
+    margin: 0 auto;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+
+  h1 {
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+
+  .subtitle {
+    font-size: 14px;
+    color: #6b7280;
+    margin-bottom: 20px;
+  }
+
+  label {
+    display: block;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 6px;
+    color: #374151;
+  }
+
+  input[type="text"], textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: 'Courier New', monospace;
+    margin-bottom: 16px;
+    -webkit-appearance: none;
+  }
+
+  textarea {
+    resize: vertical;
+    min-height: 140px;
+    line-height: 1.5;
+  }
+
+  .field-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+
+  .point-count {
+    font-size: 13px;
+    color: #9ca3af;
+  }
+
+  .hint {
+    font-size: 12px;
+    color: #9ca3af;
+    margin-top: -12px;
+    margin-bottom: 16px;
+  }
+
+  button {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-appearance: none;
+  }
+
+  .btn-primary {
+    background-color: #3b82f6;
+    color: white;
+  }
+
+  .btn-primary:active {
+    background-color: #2563eb;
+  }
+
+  .btn-primary:disabled {
+    background-color: #93c5fd;
+  }
+
+  .btn-secondary {
+    background-color: transparent;
+    color: #3b82f6;
+    font-size: 13px;
+    font-weight: 500;
+    width: auto;
+    padding: 6px 10px;
+  }
+
+  .status-box {
+    margin-top: 16px;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    display: none;
+  }
+
+  .status-success {
+    background-color: #dcfce7;
+    color: #15803d;
+    display: block;
+  }
+
+  .status-error {
+    background-color: #fee2e2;
+    color: #b91c1c;
+    display: block;
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    margin: 24px 0;
+  }
+
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  h2 {
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .note-box {
+    background-color: #f9fafb;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 13px;
+    font-family: 'Courier New', monospace;
+    white-space: pre-wrap;
+    color: #6b7280;
+    line-height: 1.5;
+    word-break: break-word;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Sticky Note</h1>
+  <p class="subtitle">Kirim catatan poin-poin ke device ESP32 kamu.</p>
+
+  <label>Alamat Server Backend:</label>
+  <input type="text" id="serverUrl" value="https://sticky-note-backend-production.up.railway.app">
+
+  <label>Device ID:</label>
+  <input type="text" id="deviceId" value="device001">
+
+  <div class="field-header">
+    <label style="margin-bottom: 0;">Poin-poin (awali tiap baris dengan - atau •):</label>
+    <span class="point-count" id="pointCount">0 poin</span>
+  </div>
+  <textarea id="text" placeholder="- Beli susu&#10;- Meeting jam 10 pagi&#10;- Telepon dokter gigi&#10;- Bayar listrik bulan ini" oninput="countPoints()"></textarea>
+  <p class="hint">Setiap baris yang diawali - atau • akan jadi 1 halaman di OLED.</p>
+
+  <button class="btn-primary" onclick="sendNote()" id="sendBtn">Kirim ke Device</button>
+
+  <div id="statusBox" class="status-box"></div>
+
+  <hr>
+
+  <div class="section-header">
+    <h2>Catatan Saat Ini</h2>
+    <button class="btn-secondary" onclick="fetchCurrentNote()">Refresh</button>
+  </div>
+  <div id="currentNoteBox" class="note-box">Klik "Refresh" untuk lihat catatan tersimpan</div>
+</div>
+
+<script>
+function countPoints() {
+  const text = document.getElementById('text').value;
+  const lines = text.split('\n');
+  const count = lines.filter(l => l.trim().startsWith('-') || l.trim().startsWith('•')).length;
+  document.getElementById('pointCount').textContent = count + ' poin';
+}
+
+function showStatus(message, isError) {
+  const box = document.getElementById('statusBox');
+  box.textContent = message;
+  box.className = 'status-box ' + (isError ? 'status-error' : 'status-success');
+}
+
+async function sendNote() {
+  const serverUrl = document.getElementById('serverUrl').value.trim();
+  const deviceId  = document.getElementById('deviceId').value.trim();
+  const text      = document.getElementById('text').value;
+
+  if (!text.trim()) {
+    showStatus('Teks tidak boleh kosong!', true);
+    return;
+  }
+
+  const btn = document.getElementById('sendBtn');
+  btn.disabled = true;
+  btn.textContent = 'Mengirim...';
+
+  try {
+    const response = await fetch(`${serverUrl}/notes/${deviceId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      showStatus(`Berhasil! Catatan untuk "${deviceId}" telah dikirim. Device akan update dalam beberapa detik.`, false);
+      fetchCurrentNote();
+    } else {
+      showStatus('Gagal: ' + (data.error || 'Terjadi kesalahan'), true);
+    }
+  } catch (err) {
+    showStatus('Tidak bisa terhubung ke server. Cek alamat server dan pastikan backend berjalan.', true);
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Kirim ke Device';
+}
+
+async function fetchCurrentNote() {
+  const serverUrl = document.getElementById('serverUrl').value.trim();
+  const deviceId  = document.getElementById('deviceId').value.trim();
+  const box = document.getElementById('currentNoteBox');
+
+  box.textContent = 'Memuat...';
+
+  try {
+    const response = await fetch(`${serverUrl}/notes/${deviceId}`);
+    const data = await response.json();
+
+    if (data.text) {
+      box.textContent = data.text + '\n\n(Update terakhir: ' + new Date(data.updatedAt).toLocaleString('id-ID') + ')';
+    } else {
+      box.textContent = 'Belum ada catatan untuk device ini.';
+    }
+  } catch (err) {
+    box.textContent = 'Gagal memuat data. Cek alamat server.';
+  }
+}
+
+fetchCurrentNote();
+</script>
+</body>
+</html>
