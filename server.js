@@ -25,6 +25,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 
 // ============================================
 const MONGODB_URI = process.env.MONGODB_URI;
 const HF_TOKEN = process.env.HF_TOKEN; // token Hugging Face, diset di Render Environment
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY; // API key Google Gemini, diset di Render Environment
 
 if (!MONGODB_URI) {
   console.error('ERROR: MONGODB_URI belum diset!');
@@ -32,6 +33,9 @@ if (!MONGODB_URI) {
 }
 if (!HF_TOKEN) {
   console.warn('WARNING: HF_TOKEN belum diset - fitur STT tidak akan berfungsi.');
+}
+if (!GEMINI_API_KEY) {
+  console.warn('WARNING: GEMINI_API_KEY belum diset - fitur Summary tidak akan berfungsi.');
 }
 
 mongoose.connect(MONGODB_URI)
@@ -187,6 +191,72 @@ app.get('/recordings/:deviceId', async (req, res) => {
     res.json(recordings);
   } catch (err) {
     res.status(500).json({ error: 'Gagal ambil daftar recording' });
+  }
+});
+
+// ============================================
+// ENDPOINT BARU: Buat summary dari transkrip yang sudah ada
+// POST /recordings/:recordingId/summarize
+// Tidak perlu body apapun - transkrip sudah ada di database,
+// tinggal ambil lalu kirim ke Gemini API
+// ============================================
+app.post('/recordings/:recordingId/summarize', async (req, res) => {
+  const { recordingId } = req.params;
+
+  if (!GEMINI_API_KEY) {
+    return res.status(500).json({ error: 'GEMINI_API_KEY belum dikonfigurasi di server' });
+  }
+
+  try {
+    const recording = await Recording.findById(recordingId);
+
+    if (!recording) {
+      return res.status(404).json({ error: 'Recording tidak ditemukan' });
+    }
+
+    if (!recording.transcript) {
+      return res.status(400).json({ error: 'Recording ini belum punya transkrip, tidak bisa dibuat summary' });
+    }
+
+    console.log(`Membuat summary untuk recording ${recordingId}...`);
+
+    // Prompt yang dikirim ke Gemini - instruksi supaya hasilnya ringkas dan relevan
+    const prompt = `Ringkas transkrip meeting/catatan berikut ini dalam bahasa Indonesia,
+maksimal 3-4 kalimat, fokus pada poin-poin penting saja:
+
+"${recording.transcript}"`;
+
+    const geminiResponse = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        contents: [{
+          parts: [{ text: prompt }]
+        }]
+      },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 30000
+      }
+    );
+
+    // Struktur response Gemini agak bertingkat, ambil teks hasilnya
+    const summaryText = geminiResponse.data.candidates[0].content.parts[0].text;
+
+    recording.summary = summaryText;
+    recording.status = 'summarized';
+    await recording.save();
+
+    console.log(`Summary berhasil dibuat: "${summaryText.substring(0, 60)}..."`);
+
+    res.json({
+      success: true,
+      recordingId: recording._id,
+      summary: summaryText
+    });
+
+  } catch (err) {
+    console.error('Error saat proses summary:', err.response?.data || err.message);
+    res.status(500).json({ error: 'Gagal proses summary' });
   }
 });
 
