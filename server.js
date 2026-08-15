@@ -60,6 +60,7 @@ const recordingSchema = new mongoose.Schema({
   transcript: { type: String, default: '' },
   summary: { type: String, default: '' },
   status: { type: String, default: 'processing' }, // processing | transcribed | summarized | failed
+  synced: { type: Boolean, default: false }, // apakah sudah pernah diambil device
   createdAt: { type: Date, default: Date.now }
 });
 const Recording = mongoose.model('Recording', recordingSchema);
@@ -187,8 +188,76 @@ app.post('/recordings/:deviceId', upload.single('audio'), async (req, res) => {
 });
 
 // ============================================
-// ENDPOINT: Ambil daftar recording + transkrip untuk device tertentu
+// ENDPOINT SYNC: Ambil semua data baru untuk device (notes + recording)
+// GET /sync/:deviceId
+// Cuma kirim recording yang BELUM pernah disync (synced: false)
+// supaya device tidak download ulang data yang sama
+// ============================================
+app.get('/sync/:deviceId', async (req, res) => {
+  const { deviceId } = req.params;
+
+  try {
+    const note = await Note.findOne({ deviceId });
+
+    const unsyncedRecordings = await Recording.find({
+      deviceId,
+      status: 'summarized',
+      synced: false
+    }).sort({ createdAt: 1 }); // urut dari yang paling lama, supaya kronologis
+
+    res.json({
+      notes: {
+        text: note?.text || '',
+        updatedAt: note?.updatedAt || null
+      },
+      recordings: unsyncedRecordings.map(r => ({
+        recordingId: r._id,
+        transcript: r.transcript,
+        summary: r.summary,
+        createdAt: r.createdAt
+      }))
+    });
+  } catch (err) {
+    console.error('Error saat sync:', err);
+    res.status(500).json({ error: 'Gagal proses sync' });
+  }
+});
+
+// ============================================
+// ENDPOINT ACK: Device konfirmasi sudah berhasil simpan data ke SD card
+// POST /sync/:deviceId/ack
+// Body: { "recordingIds": ["id1", "id2", ...] }
+// ============================================
+app.post('/sync/:deviceId/ack', async (req, res) => {
+  const { deviceId } = req.params;
+  const { recordingIds } = req.body;
+
+  if (!Array.isArray(recordingIds)) {
+    return res.status(400).json({ error: 'Field "recordingIds" harus berupa array' });
+  }
+
+  try {
+    const result = await Recording.updateMany(
+      { _id: { $in: recordingIds }, deviceId },
+      { synced: true }
+    );
+
+    console.log(`[${deviceId}] ${result.modifiedCount} recording ditandai sudah disync`);
+
+    res.json({
+      success: true,
+      updatedCount: result.modifiedCount
+    });
+  } catch (err) {
+    console.error('Error saat ack sync:', err);
+    res.status(500).json({ error: 'Gagal update status sync' });
+  }
+});
+
+// ============================================
+// ENDPOINT DEBUG: Lihat SEMUA recording (termasuk yang sudah disync)
 // GET /recordings/:deviceId
+// Berguna untuk debugging manual lewat Postman, device tidak pakai endpoint ini
 // ============================================
 app.get('/recordings/:deviceId', async (req, res) => {
   try {
