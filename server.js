@@ -167,6 +167,13 @@ app.post('/recordings/:deviceId', upload.single('audio'), async (req, res) => {
   } catch (err) {
     console.error('Error saat proses STT:', err.response?.data || err.message);
 
+    // Update status jadi "failed" supaya tidak nyangkut selamanya sebagai "processing"
+    await Recording.findOneAndUpdate(
+      { deviceId, status: 'processing' },
+      { status: 'failed' },
+      { sort: { createdAt: -1 } }
+    );
+
     // Kalau model sedang "loading" (cold start), Hugging Face kasih error khusus ini
     if (err.response?.status === 503) {
       return res.status(503).json({
