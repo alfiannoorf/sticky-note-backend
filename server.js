@@ -131,9 +131,10 @@ app.post('/recordings/:deviceId', upload.single('audio'), async (req, res) => {
     console.log(`[${deviceId}] Menerima audio (${req.file.size} bytes), mengirim ke Hugging Face...`);
 
     // Kirim audio mentah (binary) ke Hugging Face Inference API
-    // Model: openai/whisper-large-v3 (bisa diganti whisper-base untuk lebih cepat/ringan)
+    // CATATAN: endpoint lama "api-inference.huggingface.co" sudah dipensiunkan,
+    // diganti dengan "router.huggingface.co" per kebijakan HF terbaru
     const hfResponse = await axios.post(
-      'https://api-inference.huggingface.co/models/openai/whisper-large-v3',
+      'https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3',
       req.file.buffer,
       {
         headers: {
