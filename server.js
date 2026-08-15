@@ -202,7 +202,7 @@ app.get('/sync/:deviceId', async (req, res) => {
     const unsyncedRecordings = await Recording.find({
       deviceId,
       status: 'summarized',
-      synced: false
+      synced: { $ne: true } // cocokkan false ATAU field yang belum ada sama sekali
     }).sort({ createdAt: 1 }); // urut dari yang paling lama, supaya kronologis
 
     res.json({
