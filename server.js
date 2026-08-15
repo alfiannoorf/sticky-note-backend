@@ -139,7 +139,8 @@ app.post('/recordings/:deviceId', upload.single('audio'), async (req, res) => {
       {
         headers: {
           'Authorization': `Bearer ${HF_TOKEN}`,
-          'Content-Type': 'audio/wav'
+          'Content-Type': 'audio/wav',
+          'Accept': 'application/json' // wajib diisi eksplisit, endpoint menolak Accept default axios
         },
         timeout: 60000 // 60 detik, karena model bisa lambat di cold start
       }
