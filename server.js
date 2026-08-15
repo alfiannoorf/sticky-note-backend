@@ -227,7 +227,7 @@ maksimal 3-4 kalimat, fokus pada poin-poin penting saja:
 "${recording.transcript}"`;
 
     const geminiResponse = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_API_KEY}`,
       {
         contents: [{
           parts: [{ text: prompt }]
