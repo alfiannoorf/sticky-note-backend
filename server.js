@@ -66,6 +66,42 @@ const recordingSchema = new mongoose.Schema({
 const Recording = mongoose.model('Recording', recordingSchema);
 
 // ============================================
+// FUNGSI REUSABLE: Generate summary dari transkrip
+// Dipanggil otomatis setelah STT selesai, ATAU manual lewat endpoint /summarize
+// ============================================
+async function generateSummary(recording) {
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY belum dikonfigurasi di server');
+  }
+
+  const prompt = `Ringkas transkrip meeting/catatan berikut ini dalam bahasa Indonesia,
+maksimal 3-4 kalimat, fokus pada poin-poin penting saja:
+
+"${recording.transcript}"`;
+
+  const geminiResponse = await axios.post(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      contents: [{
+        parts: [{ text: prompt }]
+      }]
+    },
+    {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000
+    }
+  );
+
+  const summaryText = geminiResponse.data.candidates[0].content.parts[0].text;
+
+  recording.summary = summaryText;
+  recording.status = 'summarized';
+  await recording.save();
+
+  return summaryText;
+}
+
+// ============================================
 // ENDPOINT: Cek server hidup
 // ============================================
 app.get('/', async (req, res) => {
@@ -159,11 +195,35 @@ app.post('/recordings/:deviceId', upload.single('audio'), async (req, res) => {
 
     console.log(`[${deviceId}] Transkrip berhasil: "${transcriptText.substring(0, 60)}..."`);
 
-    res.json({
-      success: true,
-      recordingId: recording._id,
-      transcript: transcriptText
-    });
+    // ====== OTOMATIS LANJUT KE SUMMARY ======
+    // Kalau gagal (misal Gemini lagi "high demand"), status TETAP "transcribed",
+    // bukan "failed" - supaya bisa di-retry manual lewat endpoint /summarize
+    // tanpa perlu upload ulang audio dari awal
+    try {
+      const summaryText = await generateSummary(recording);
+      console.log(`[${deviceId}] Summary otomatis berhasil: "${summaryText.substring(0, 60)}..."`);
+
+      return res.json({
+        success: true,
+        recordingId: recording._id,
+        transcript: transcriptText,
+        summary: summaryText,
+        autoSummarized: true
+      });
+    } catch (summaryErr) {
+      console.warn(`[${deviceId}] Transkrip berhasil, tapi auto-summary gagal:`, summaryErr.response?.data || summaryErr.message);
+
+      // Transkrip tetap dianggap sukses meski summary gagal -
+      // bisa di-retry manual nanti lewat POST /recordings/:id/summarize
+      return res.json({
+        success: true,
+        recordingId: recording._id,
+        transcript: transcriptText,
+        summary: null,
+        autoSummarized: false,
+        note: 'Transkrip berhasil, tapi summary gagal dibuat otomatis. Coba manual lewat endpoint /summarize.'
+      });
+    }
 
   } catch (err) {
     console.error('Error saat proses STT:', err.response?.data || err.message);
@@ -296,31 +356,7 @@ app.post('/recordings/:recordingId/summarize', async (req, res) => {
 
     console.log(`Membuat summary untuk recording ${recordingId}...`);
 
-    // Prompt yang dikirim ke Gemini - instruksi supaya hasilnya ringkas dan relevan
-    const prompt = `Ringkas transkrip meeting/catatan berikut ini dalam bahasa Indonesia,
-maksimal 3-4 kalimat, fokus pada poin-poin penting saja:
-
-"${recording.transcript}"`;
-
-    const geminiResponse = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        contents: [{
-          parts: [{ text: prompt }]
-        }]
-      },
-      {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 30000
-      }
-    );
-
-    // Struktur response Gemini agak bertingkat, ambil teks hasilnya
-    const summaryText = geminiResponse.data.candidates[0].content.parts[0].text;
-
-    recording.summary = summaryText;
-    recording.status = 'summarized';
-    await recording.save();
+    const summaryText = await generateSummary(recording);
 
     console.log(`Summary berhasil dibuat: "${summaryText.substring(0, 60)}..."`);
 
