@@ -146,6 +146,13 @@ app.post('/habits/:deviceId', async (req, res) => {
   }
 
   try {
+    // Cek dulu apakah habit dengan nama sama sudah ada untuk device ini,
+    // supaya tidak numpuk duplikat kalau request tidak sengaja terkirim 2x
+    const existing = await Habit.findOne({ deviceId, name: name.trim() });
+    if (existing) {
+      return res.status(409).json({ error: `Habit "${name.trim()}" sudah ada`, habit: existing });
+    }
+
     const habit = await Habit.create({ deviceId, name: name.trim() });
     res.json({ success: true, habit });
   } catch (err) {
