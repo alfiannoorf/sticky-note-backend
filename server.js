@@ -66,6 +66,26 @@ const recordingSchema = new mongoose.Schema({
 const Recording = mongoose.model('Recording', recordingSchema);
 
 // ============================================
+// SCHEMA BARU: Habit Tracker
+// ============================================
+const habitSchema = new mongoose.Schema({
+  deviceId: { type: String, required: true },
+  name: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now }
+});
+const Habit = mongoose.model('Habit', habitSchema);
+
+// 1 dokumen per hari, isi semua centangan habit hari itu
+const dailyHabitLogSchema = new mongoose.Schema({
+  deviceId: { type: String, required: true },
+  date: { type: String, required: true }, // format "2026-08-15"
+  completions: { type: Map, of: Boolean, default: {} } // { habitId: true/false }
+});
+// Kombinasi deviceId+date harus unik, supaya tidak ada 2 dokumen untuk hari yang sama
+dailyHabitLogSchema.index({ deviceId: 1, date: 1 }, { unique: true });
+const DailyHabitLog = mongoose.model('DailyHabitLog', dailyHabitLogSchema);
+
+// ============================================
 // FUNGSI REUSABLE: Generate summary dari transkrip
 // Dipanggil otomatis setelah STT selesai, ATAU manual lewat endpoint /summarize
 // ============================================
@@ -100,6 +120,51 @@ maksimal 3-4 kalimat, fokus pada poin-poin penting saja:
 
   return summaryText;
 }
+
+// ============================================
+// ENDPOINT HABIT TRACKER: Kelola daftar habit
+// ============================================
+
+// GET /habits/:deviceId - ambil semua habit milik device
+app.get('/habits/:deviceId', async (req, res) => {
+  try {
+    const habits = await Habit.find({ deviceId: req.params.deviceId }).sort({ createdAt: 1 });
+    res.json(habits);
+  } catch (err) {
+    res.status(500).json({ error: 'Gagal ambil daftar habit' });
+  }
+});
+
+// POST /habits/:deviceId - tambah habit baru
+// Body: { "name": "Olahraga" }
+app.post('/habits/:deviceId', async (req, res) => {
+  const { deviceId } = req.params;
+  const { name } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Field "name" wajib diisi' });
+  }
+
+  try {
+    const habit = await Habit.create({ deviceId, name: name.trim() });
+    res.json({ success: true, habit });
+  } catch (err) {
+    res.status(500).json({ error: 'Gagal tambah habit' });
+  }
+});
+
+// DELETE /habits/:habitId - hapus 1 habit
+app.delete('/habits/:habitId', async (req, res) => {
+  try {
+    const deleted = await Habit.findByIdAndDelete(req.params.habitId);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Habit tidak ditemukan' });
+    }
+    res.json({ success: true, deletedId: req.params.habitId });
+  } catch (err) {
+    res.status(500).json({ error: 'Gagal hapus habit' });
+  }
+});
 
 // ============================================
 // ENDPOINT: Cek server hidup
